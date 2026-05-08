@@ -174,31 +174,40 @@ async function getDirectionsEstimate(origin: string, destination: string, mode: 
 // ── API Enrichment ───────────────────────────────────────────
 
 async function enrichTripWithAPIs(trip: Trip): Promise<Trip> {
+  if (!trip.days || trip.days.length === 0) return trip;
+
   const updatedDays = await Promise.all(trip.days.map(async (day) => {
-    const firstActivity = day.activities[0];
-    const citySearch = firstActivity?.location?.address ?? trip.preferences.destination;
+    // Ensure activities array exists
+    const activities = day.activities ?? [];
+    const firstActivity = activities[0];
+    // Extract a city name from the address (take the last part after the last comma)
+    const rawAddress = firstActivity?.location?.address ?? trip.preferences.destination ?? '';
+    const citySearch = rawAddress.split(',').pop()?.trim() || rawAddress;
 
     // Enrich weather
-    let weatherInfo = day.weather;
+    let weatherInfo = day.weather ?? { high: 30, low: 20, condition: 'Clear', icon: '01d', rainProbability: 10, description: 'clear sky' };
     try {
       const forecast = await getWeatherForecast(citySearch, 5);
-      const fw = forecast.forecast[0];
+      const fw = forecast?.forecast?.[0];
       if (fw) {
         weatherInfo = {
-          high: fw.high,
-          low: fw.low,
-          condition: fw.condition,
+          high: fw.high ?? 30,
+          low: fw.low ?? 20,
+          condition: fw.condition ?? 'Clear',
           icon: '01d',
-          rainProbability: fw.rainProbability,
-          description: fw.condition,
+          rainProbability: fw.rainProbability ?? 10,
+          description: fw.condition ?? 'clear sky',
         };
       }
     } catch (e) {
-      log.warn('Weather enrichment failed', { error: String(e) });
+      log.warn('Weather enrichment skipped', { city: citySearch, error: String(e) });
     }
 
     // Enrich activities with real Places + Directions
-    const updatedActivities = await Promise.all(day.activities.map(async (act, index) => {
+    const updatedActivities = await Promise.all(activities.map(async (act, index) => {
+      // Ensure location exists
+      if (!act.location) act.location = { lat: 0, lng: 0, address: '' };
+
       // Look up real lat/lng and placeId from Google Maps
       try {
         const places = await searchPlacesWithMaps(citySearch, act.name, 1);
@@ -210,23 +219,25 @@ async function enrichTripWithAPIs(trip: Trip): Promise<Trip> {
           if (!act.location.address) act.location.address = p.address;
         }
       } catch (e) {
-        log.warn('Place enrichment failed', { error: String(e) });
+        log.warn('Place enrichment skipped', { activity: act.name, error: String(e) });
       }
 
       // Get real transit time from previous activity
       if (index > 0) {
-        const prev = day.activities[index - 1];
-        try {
-          const originStr = `${prev.location.lat},${prev.location.lng}`;
-          const destStr = `${act.location.lat},${act.location.lng}`;
-          const dir = await getDirectionsEstimate(originStr, destStr, act.transitFromPrevious?.mode || 'driving');
-          act.transitFromPrevious = {
-            mode: act.transitFromPrevious?.mode || 'driving',
-            duration: dir.durationMinutes,
-            distance: dir.distance,
-          };
-        } catch (e) {
-          log.warn('Directions enrichment failed', { error: String(e) });
+        const prev = activities[index - 1];
+        if (prev?.location?.lat && prev?.location?.lng && act.location.lat && act.location.lng) {
+          try {
+            const originStr = `${prev.location.lat},${prev.location.lng}`;
+            const destStr = `${act.location.lat},${act.location.lng}`;
+            const dir = await getDirectionsEstimate(originStr, destStr, act.transitFromPrevious?.mode || 'driving');
+            act.transitFromPrevious = {
+              mode: act.transitFromPrevious?.mode || 'driving',
+              duration: dir.durationMinutes,
+              distance: dir.distance,
+            };
+          } catch (e) {
+            log.warn('Directions enrichment skipped', { error: String(e) });
+          }
         }
       }
 
@@ -253,7 +264,7 @@ function buildPrompt(prefs: TripPreferences, userMessage?: string): string {
   return `Plan a ${dayCount}-day trip from ${prefs.startDate} to ${prefs.endDate}.
 
 TRAVELER PROFILE:
-- Origin / Current Location: ${prefs.origin ?? 'Not specified'}
+- Origin / Location: ${prefs.origin ?? 'Not specified'}
 - ${destinationLine}
 - Budget: ₹${prefs.budget} INR total (include estimated travel/flight cost from origin)
 - Travel styles: ${prefs.travelStyle.join(', ')}
@@ -335,12 +346,21 @@ function parseGroqResponse(text: string, preferences: TripPreferences): Trip {
 
   try {
     const parsed = JSON.parse(jsonStr);
+    // Sanitize days to ensure activities and weather always exist
+    const days = (parsed.days ?? []).map((d: any, i: number) => ({
+      ...d,
+      dayNumber: d.dayNumber ?? i + 1,
+      date: d.date ?? preferences.startDate,
+      activities: d.activities ?? [],
+      weather: d.weather ?? { high: 30, low: 20, condition: 'Clear', icon: '01d', rainProbability: 10, description: 'clear sky' },
+      feasibilityScore: d.feasibilityScore ?? 75,
+    }));
     return {
       id: `trip_${Date.now()}`,
       userId: 'anonymous',
       name: parsed.name ?? `Trip from ${preferences.origin ?? 'your location'}`,
       preferences,
-      days: parsed.days ?? [],
+      days,
       totalCost: parsed.totalCost ?? 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

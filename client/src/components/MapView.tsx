@@ -61,18 +61,6 @@ export default function MapView({ trip, selectedDay, onActivityClick }: MapViewP
 
   return (
     <div className="map-container" role="region" aria-label="Trip map">
-      {trip && activities.length > 0 && (
-        <div className="map-overlay">
-          <div className="weather-badge animate-fade-in">
-            📍 {activities.length} stops
-            {selectedDay ? ` · Day ${selectedDay}` : ` · ${trip.days.length} days`}
-          </div>
-          <div className="weather-badge">
-            💰 ₹{trip.totalCost} total
-          </div>
-        </div>
-      )}
-
       <APIProvider apiKey={apiKey}>
         <Map
           defaultCenter={center}

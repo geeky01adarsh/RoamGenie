@@ -162,7 +162,7 @@ export default function DayTimeline({ trip, isLoading, selectedDay, onSelectDay,
                         {CATEGORY_ICONS[activity.category]} {activity.category}
                       </span>
                       <span>⏱️ {activity.duration}min</span>
-                      {activity.cost > 0 && <span>💰 ${activity.cost}</span>}
+                      {activity.cost > 0 && <span>💰 ₹{activity.cost.toLocaleString('en-IN')}</span>}
                       {activity.weather.isOutdoor && <span>🌤️ Outdoor</span>}
                     </div>
                   </div>

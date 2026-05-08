@@ -52,6 +52,14 @@ export default function TripChat({ messages, isLoading, hasTrip, onGenerate, onR
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
   useEffect(() => { if (hasTrip) setShowForm(false); }, [hasTrip]);
 
+  // Date helpers — start must be ≥ tomorrow, end must be ≥ start
+  const tomorrow = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().split('T')[0];
+  })();
+  const minEndDate = startDate > tomorrow ? startDate : tomorrow;
+
   const toggleStyle = (style: TravelStyle) => {
     setStyles((prev) =>
       prev.includes(style) ? prev.filter((s) => s !== style) : prev.length < 5 ? [...prev, style] : prev
@@ -139,7 +147,7 @@ export default function TripChat({ messages, isLoading, hasTrip, onGenerate, onR
             </div>
           ) : (
             <div className="input-group">
-              <label htmlFor="origin">Current Location</label>
+              <label htmlFor="origin">Location</label>
               <input id="origin" className="input-field" type="text"
                 placeholder="e.g. New York, London..." value={origin}
                 onChange={(e) => setOrigin(e.target.value)} required aria-required="true" />
@@ -150,11 +158,13 @@ export default function TripChat({ messages, isLoading, hasTrip, onGenerate, onR
             <div className="input-group">
               <label htmlFor="start-date">Start Date</label>
               <input id="start-date" className="input-field" type="date" value={startDate}
-                onChange={(e) => setStartDate(e.target.value)} required aria-required="true" />
+                min={tomorrow}
+                onChange={(e) => { setStartDate(e.target.value); if (endDate && e.target.value > endDate) setEndDate(''); }} required aria-required="true" />
             </div>
             <div className="input-group">
               <label htmlFor="end-date">End Date</label>
               <input id="end-date" className="input-field" type="date" value={endDate}
+                min={minEndDate}
                 onChange={(e) => setEndDate(e.target.value)} required aria-required="true" />
             </div>
           </div>
