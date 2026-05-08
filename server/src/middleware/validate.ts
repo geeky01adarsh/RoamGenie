@@ -12,7 +12,7 @@ export const tripPreferencesSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
   budget: z.number().positive().max(1_000_000),
-  currency: z.string().length(3).default('USD'),
+  currency: z.string().length(3).default('INR'),
   travelStyle: z.array(
     z.enum(['adventure', 'relaxation', 'culture', 'foodie', 'nightlife', 'nature', 'romantic'])
   ).min(1).max(5),
