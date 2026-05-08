@@ -17,16 +17,37 @@ const app = express();
 const PORT = process.env.PORT ?? 9001;
 
 // ── Security Middleware ──────────────────────────────────────
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: false,     // Allow Google Maps / fonts
+  crossOriginEmbedderPolicy: false, // Allow external API calls
+}));
 app.use(cors({
   origin: process.env.CORS_ORIGIN ?? 'http://localhost:9173',
   credentials: true,
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json({ limit: '1mb' }));
 
+// ── Request ID + Timing ──────────────────────────────────────
+app.use((req, res, next) => {
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  req.headers['x-request-id'] = requestId;
+  res.setHeader('X-Request-Id', requestId);
+  const start = Date.now();
+  res.on('finish', () => {
+    res.setHeader('X-Response-Time', `${Date.now() - start}ms`);
+  });
+  next();
+});
+
 // ── Request Logging ──────────────────────────────────────────
 app.use((req, _res, next) => {
-  log.info(`${req.method} ${req.path}`, { ip: req.ip, ua: req.get('user-agent')?.slice(0, 50) });
+  log.info(`${req.method} ${req.path}`, {
+    ip: req.ip,
+    ua: req.get('user-agent')?.slice(0, 50),
+    reqId: req.headers['x-request-id'] as string,
+  });
   next();
 });
 
@@ -42,7 +63,19 @@ app.use('/api/', apiLimiter);
 
 // ── Health Check ─────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
-  res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } });
+  res.json({
+    success: true,
+    data: {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      version: process.env.npm_package_version ?? '1.0.0',
+      services: {
+        groq: !!process.env.GROQ_API_KEY,
+        maps: !!process.env.GCP_MAPS_API_KEY,
+        weather: !!process.env.OPENWEATHER_API_KEY,
+      },
+    },
+  });
 });
 
 // ── Routes ───────────────────────────────────────────────────

@@ -95,6 +95,12 @@ export default function App() {
       </header>
 
       <main id="main-content" role="main" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Screen reader announcement for loading state */}
+        <div aria-live="assertive" aria-atomic="true" className="sr-only"
+          style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0,0,0,0)' }}>
+          {isLoading ? 'Generating your itinerary, please wait...' : ''}
+        </div>
+
         {view === 'planner' ? (
           <div className="app-main">
             <TripChat messages={messages} isLoading={isLoading} hasTrip={!!trip}

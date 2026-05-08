@@ -1,18 +1,36 @@
 // ============================================================
 // API Service — Client-side HTTP client for backend communication
+// Features: timeout, error handling, type-safe responses
 // ============================================================
 
 import type { ApiResponse, Trip, GenerateTripRequest, AdaptTripRequest, RefineTripRequest } from '@shared/types/index';
 
 const API_BASE = '/api';
 
-/** Generic fetch wrapper with error handling */
-async function apiCall<T>(endpoint: string, options?: RequestInit): Promise<ApiResponse<T>> {
+/** Default request timeout in milliseconds */
+const REQUEST_TIMEOUT_MS = 60_000;
+
+/**
+ * Generic fetch wrapper with error handling, timeout, and type safety.
+ * @param endpoint - API path (e.g. '/trips/generate')
+ * @param options - Standard fetch options
+ * @param timeoutMs - Override default timeout (default: 60s)
+ */
+async function apiCall<T>(
+  endpoint: string,
+  options?: RequestInit,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
+): Promise<ApiResponse<T>> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       ...options,
     });
+    clearTimeout(timeout);
 
     const data: ApiResponse<T> = await response.json();
 
@@ -25,6 +43,15 @@ async function apiCall<T>(endpoint: string, options?: RequestInit): Promise<ApiR
 
     return data;
   } catch (error) {
+    clearTimeout(timeout);
+
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      return {
+        success: false,
+        error: { code: 'TIMEOUT', message: 'Request timed out. The server may be busy — please try again.' },
+      };
+    }
+
     return {
       success: false,
       error: {
@@ -64,7 +91,12 @@ export async function getWeather(city: string, days: number = 5) {
   return apiCall<unknown>(`/weather?city=${encodeURIComponent(city)}&days=${days}`);
 }
 
-/** Health check */
+/** Health check — includes service availability info */
 export async function healthCheck() {
-  return apiCall<{ status: string; timestamp: string }>('/health');
+  return apiCall<{
+    status: string;
+    timestamp: string;
+    version: string;
+    services: { groq: boolean; maps: boolean; weather: boolean };
+  }>('/health', undefined, 5000);
 }

@@ -1,6 +1,7 @@
 // ============================================================
 // Groq AI Service — Core Intelligence Engine
 // Uses Llama 3.3 70B via Groq for ultra-fast trip generation
+// with multi-model fallback, input sanitization, and timeout
 // ============================================================
 
 import Groq from 'groq-sdk';
@@ -10,15 +11,24 @@ import { createLogger } from '../utils/logger.js';
 
 const log = createLogger('Groq');
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
+/** Groq API client — validates key presence at startup */
+const apiKey = process.env.GROQ_API_KEY;
+if (!apiKey) log.warn('GROQ_API_KEY is not set — AI generation will fail');
+const groq = new Groq({ apiKey: apiKey ?? '' });
 
-// Fallback model list — verified active Groq models (May 2026)
-// See: https://console.groq.com/docs/models
+/** Maximum time to wait for a single LLM response (ms) */
+const LLM_TIMEOUT_MS = 30_000;
+
+/**
+ * Fallback model list — verified active Groq models (May 2026).
+ * Order matters: higher quality models first, cheaper/faster last.
+ * @see https://console.groq.com/docs/models
+ */
 const FALLBACK_MODELS = [
-  'llama-3.3-70b-versatile',                        // Primary: best quality
+  'llama-3.3-70b-versatile',                        // Production: best quality
   'meta-llama/llama-4-scout-17b-16e-instruct',      // Preview: Llama 4 Scout
   'qwen/qwen3-32b',                                 // Preview: Qwen 3 32B
-  'llama-3.1-8b-instant',                            // Fast: low latency, small context
+  'llama-3.1-8b-instant',                            // Production: low latency
 ];
 
 // ── System Prompt ─────────────────────────────────────────────
@@ -67,22 +77,38 @@ OUTPUT FORMAT: Respond ONLY with a valid JSON object matching this exact structu
 
 // ── Groq Generation with Fallback ────────────────────────────
 
+/**
+ * Generates text from Groq API with automatic multi-model fallback.
+ * Includes per-request timeout to prevent hanging connections.
+ * @param prompt - User prompt (already sanitized by buildPrompt)
+ * @returns Raw JSON text from the LLM
+ * @throws Error if all models fail or auth is invalid
+ */
 async function generateWithFallback(prompt: string): Promise<string> {
   let lastError: Error | null = null;
 
   for (const model of FALLBACK_MODELS) {
     try {
       log.info(`Attempting generation with model: ${model}`);
-      const completion = await groq.chat.completions.create({
-        model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 4096,
-        response_format: { type: 'json_object' },
-      });
+
+      // Timeout guard — AbortController cancels hung requests
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
+
+      const completion = await groq.chat.completions.create(
+        {
+          model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.7,
+          max_tokens: 4096,
+          response_format: { type: 'json_object' },
+        },
+        { signal: controller.signal }
+      );
+      clearTimeout(timeout);
 
       const text = completion.choices[0]?.message?.content ?? '';
       if (!text) throw new Error('Empty response from model');
@@ -90,10 +116,11 @@ async function generateWithFallback(prompt: string): Promise<string> {
       return text;
     } catch (e: any) {
       lastError = e;
-      log.warn(`Model ${model} failed`, { error: e.message || String(e) });
-      // Stop on auth errors
+      const errMsg = e.name === 'AbortError' ? `Timeout after ${LLM_TIMEOUT_MS}ms` : (e.message || String(e));
+      log.warn(`Model ${model} failed`, { error: errMsg });
+      // Stop on auth errors — no point trying other models
       if (e.status === 401 || e.status === 403) throw e;
-      // Continue to next model on quota / unavailable
+      // Continue to next model on quota / unavailable / timeout
     }
   }
 
