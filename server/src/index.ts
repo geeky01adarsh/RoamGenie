@@ -1,0 +1,68 @@
+// ============================================================
+// RoamGenie Server — Entry Point
+// Express with security middleware, rate limiting, logging
+// ============================================================
+
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { tripRouter } from './routes/trip.js';
+import { weatherRouter } from './routes/weather.js';
+import { createLogger } from './utils/logger.js';
+
+const log = createLogger('Server');
+const app = express();
+const PORT = process.env.PORT ?? 9001;
+
+// ── Security Middleware ──────────────────────────────────────
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CORS_ORIGIN ?? 'http://localhost:9173',
+  credentials: true,
+}));
+app.use(express.json({ limit: '1mb' }));
+
+// ── Request Logging ──────────────────────────────────────────
+app.use((req, _res, next) => {
+  log.info(`${req.method} ${req.path}`, { ip: req.ip, ua: req.get('user-agent')?.slice(0, 50) });
+  next();
+});
+
+// ── Rate Limiting ────────────────────────────────────────────
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: { code: 'RATE_LIMIT', message: 'Too many requests.' } },
+});
+app.use('/api/', apiLimiter);
+
+// ── Health Check ─────────────────────────────────────────────
+app.get('/api/health', (_req, res) => {
+  res.json({ success: true, data: { status: 'ok', timestamp: new Date().toISOString() } });
+});
+
+// ── Routes ───────────────────────────────────────────────────
+app.use('/api/trips', tripRouter);
+app.use('/api/weather', weatherRouter);
+
+// ── Global Error Handler ─────────────────────────────────────
+app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  log.error('Unhandled error', { message: err.message, stack: err.stack?.slice(0, 200) });
+  res.status(500).json({
+    success: false,
+    error: { code: 'INTERNAL_ERROR', message: 'Something went wrong.' },
+  });
+});
+
+// ── Start Server ─────────────────────────────────────────────
+app.listen(PORT, () => {
+  log.info(`RoamGenie server running on http://localhost:${PORT}`);
+  log.info(`Environment: ${process.env.NODE_ENV ?? 'development'}`);
+  log.info(`CORS origin: ${process.env.CORS_ORIGIN ?? 'http://localhost:9173'}`);
+});
+
+export default app;
