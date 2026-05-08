@@ -12,12 +12,13 @@ const log = createLogger('Groq');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY! });
 
-// Fallback model list in order of preference
+// Fallback model list — verified active Groq models (May 2026)
+// See: https://console.groq.com/docs/models
 const FALLBACK_MODELS = [
-  'llama-3.3-70b-versatile',
-  'llama-3.1-70b-versatile',
-  'llama3-70b-8192',
-  'mixtral-8x7b-32768',
+  'llama-3.3-70b-versatile',                        // Primary: best quality
+  'meta-llama/llama-4-scout-17b-16e-instruct',      // Preview: Llama 4 Scout
+  'qwen/qwen3-32b',                                 // Preview: Qwen 3 32B
+  'llama-3.1-8b-instant',                            // Fast: low latency, small context
 ];
 
 // ── System Prompt ─────────────────────────────────────────────
@@ -79,7 +80,7 @@ async function generateWithFallback(prompt: string): Promise<string> {
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
-        max_tokens: 8000,
+        max_tokens: 4096,
         response_format: { type: 'json_object' },
       });
 
