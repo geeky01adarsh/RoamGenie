@@ -187,16 +187,16 @@ async function enrichTripWithAPIs(trip: Trip): Promise<Trip> {
     // Enrich weather
     let weatherInfo = day.weather ?? { high: 30, low: 20, condition: 'Clear', icon: '01d', rainProbability: 10, description: 'clear sky' };
     try {
-      const forecast = await getWeatherForecast(citySearch, 5);
-      const fw = forecast?.forecast?.[0];
+      const forecasts = await getWeatherForecast(citySearch, 5);
+      const fw = Array.isArray(forecasts) ? forecasts[0] : undefined;
       if (fw) {
         weatherInfo = {
           high: fw.high ?? 30,
           low: fw.low ?? 20,
           condition: fw.condition ?? 'Clear',
-          icon: '01d',
+          icon: fw.icon ?? '01d',
           rainProbability: fw.rainProbability ?? 10,
-          description: fw.condition ?? 'clear sky',
+          description: fw.description ?? 'clear sky',
         };
       }
     } catch (e) {
