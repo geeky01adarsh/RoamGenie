@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { Trip, TripDay, Activity, ActivityCategory } from '@shared/types/index';
+import { downloadItinerary } from '../utils/download';
 
 interface DayTimelineProps {
   trip: Trip | null;
@@ -76,16 +77,27 @@ export default function DayTimeline({ trip, isLoading, selectedDay, onSelectDay,
     <aside className="timeline-panel" aria-label="Trip timeline">
       <div className="timeline-header">
         <h2>📅 Itinerary</h2>
-        {selectedDay && (
+        <div style={{ display: 'flex', gap: '6px' }}>
+          {selectedDay && (
+            <button
+              className="btn btn-secondary btn-icon"
+              onClick={() => onSelectDay(null)}
+              aria-label="Show all days"
+              id="show-all-days-btn"
+            >
+              All
+            </button>
+          )}
           <button
-            className="btn btn-secondary btn-icon"
-            onClick={() => onSelectDay(null)}
-            aria-label="Show all days"
-            id="show-all-days-btn"
+            className="btn btn-secondary btn-sm"
+            onClick={() => downloadItinerary(trip)}
+            aria-label="Download itinerary as text file"
+            id="download-itinerary-btn"
+            title="Download itinerary"
           >
-            All
+            📥 Download
           </button>
-        )}
+        </div>
       </div>
 
       <nav className="timeline-days">

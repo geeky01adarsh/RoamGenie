@@ -10,6 +10,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { tripRouter } from './routes/trip.js';
 import { weatherRouter } from './routes/weather.js';
+import { profileRouter } from './routes/profile.js';
 import { createLogger } from './utils/logger.js';
 
 const log = createLogger('Server');
@@ -24,7 +25,7 @@ app.use(helmet({
 app.use(cors({
   origin: process.env.CORS_ORIGIN ?? 'http://localhost:9173',
   credentials: true,
-  methods: ['GET', 'POST'],
+  methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json({ limit: '1mb' }));
@@ -36,7 +37,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Request-Id', requestId);
   const start = Date.now();
   res.on('finish', () => {
-    res.setHeader('X-Response-Time', `${Date.now() - start}ms`);
+    log.debug(`${req.method} ${req.path} completed`, { ms: Date.now() - start, reqId: requestId });
   });
   next();
 });
@@ -81,6 +82,7 @@ app.get('/api/health', (_req, res) => {
 // ── Routes ───────────────────────────────────────────────────
 app.use('/api/trips', tripRouter);
 app.use('/api/weather', weatherRouter);
+app.use('/api/profile', profileRouter);
 
 // ── Global Error Handler ─────────────────────────────────────
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

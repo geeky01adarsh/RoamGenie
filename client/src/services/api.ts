@@ -100,3 +100,30 @@ export async function healthCheck() {
     services: { groq: boolean; maps: boolean; weather: boolean };
   }>('/health', undefined, 5000);
 }
+
+// ── Profile / Trip Persistence ────────────────────────────────
+
+/** Save a trip to the server (with user identity) */
+export async function saveServerTrip(trip: Trip, userId: string): Promise<ApiResponse<Trip>> {
+  return apiCall<Trip>('/profile/trips', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
+    body: JSON.stringify(trip),
+  });
+}
+
+/** Load all saved trips from the server */
+export async function loadServerTrips(userId: string): Promise<ApiResponse<Trip[]>> {
+  return apiCall<Trip[]>('/profile/trips', {
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
+  });
+}
+
+/** Delete a trip from the server */
+export async function deleteServerTrip(tripId: string, userId: string): Promise<ApiResponse<{ deleted: boolean }>> {
+  return apiCall<{ deleted: boolean }>(`/profile/trips/${encodeURIComponent(tripId)}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
+  });
+}
+

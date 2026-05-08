@@ -1,11 +1,14 @@
 // ============================================================
 // ProfilePage — Manage past and upcoming trips
+// Uses server-side persistence with Firebase fallback
 // ============================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { Trip } from '@shared/types/index';
 import type { User } from 'firebase/auth';
-import { loadAllTrips, deleteTrip } from '../services/firebase';
+import { loadAllTrips as loadFirebaseTrips, deleteTrip as deleteFirebaseTrip } from '../services/firebase';
+import * as api from '../services/api';
+import { downloadItinerary } from '../utils/download';
 
 interface ProfilePageProps {
   user: User | null;
@@ -22,14 +25,56 @@ export default function ProfilePage({ user, onLoadTrip, onSignIn }: ProfilePageP
   const [trips, setTrips] = useState<Trip[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  /** Load trips from server first, then merge with Firebase */
+  const loadTrips = useCallback(async () => {
     if (!user) { setLoading(false); return; }
-    loadAllTrips().then((t) => { setTrips(t); setLoading(false); }).catch(() => setLoading(false));
+    setLoading(true);
+
+    try {
+      // Try server-side first
+      const serverResult = await api.loadServerTrips(user.uid);
+      let serverTrips: Trip[] = [];
+      if (serverResult.success && serverResult.data) {
+        serverTrips = serverResult.data;
+      }
+
+      // Also load from Firebase (if available)
+      let firebaseTrips: Trip[] = [];
+      try {
+        firebaseTrips = await loadFirebaseTrips();
+      } catch { /* Firebase not configured — ignore */ }
+
+      // Merge: server trips take priority, add Firebase-only trips
+      const serverIds = new Set(serverTrips.map((t) => t.id));
+      const mergedTrips = [
+        ...serverTrips,
+        ...firebaseTrips.filter((t) => !serverIds.has(t.id)),
+      ];
+
+      setTrips(mergedTrips);
+    } catch (error) {
+      console.error('[Profile] Failed to load trips:', error);
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => { loadTrips(); }, [loadTrips]);
 
   const handleDelete = async (tripId: string) => {
     if (!confirm('Delete this trip?')) return;
-    await deleteTrip(tripId);
+    if (!user) return;
+
+    // Delete from server
+    try {
+      await api.deleteServerTrip(tripId, user.uid);
+    } catch { /* Server might not have it */ }
+
+    // Delete from Firebase too
+    try {
+      await deleteFirebaseTrip(tripId);
+    } catch { /* Firebase might not be configured */ }
+
     setTrips((prev) => prev.filter((t) => t.id !== tripId));
   };
 
@@ -122,7 +167,7 @@ function TripCard({ trip, onLoad, onDelete }: { trip: Trip; onLoad: (t: Trip) =>
       <div className="trip-card-meta">
         <span>📅 {trip.preferences.startDate} → {trip.preferences.endDate}</span>
         <span>📍 {days} days</span>
-        <span>💰 ₹{trip.totalCost.toLocaleString()}</span>
+        <span>💰 ₹{trip.totalCost.toLocaleString('en-IN')}</span>
       </div>
       <div className="trip-card-tags">
         <span className="category-badge category-culture">{TRIP_TYPE_LABELS[tripType] ?? tripType}</span>
@@ -130,10 +175,17 @@ function TripCard({ trip, onLoad, onDelete }: { trip: Trip; onLoad: (t: Trip) =>
           <span key={s} className={`category-badge category-${s === 'foodie' ? 'food' : s}`}>{s}</span>
         ))}
       </div>
-      <button className="btn btn-ghost btn-sm" style={{ position: 'absolute', bottom: '12px', right: '12px' }}
-        onClick={(e) => { e.stopPropagation(); onDelete(trip.id); }} aria-label="Delete trip">
-        🗑️
-      </button>
+      <div style={{ position: 'absolute', bottom: '12px', right: '12px', display: 'flex', gap: '4px' }}>
+        <button className="btn btn-ghost btn-sm"
+          onClick={(e) => { e.stopPropagation(); downloadItinerary(trip); }} aria-label="Download trip"
+          title="Download itinerary">
+          📥
+        </button>
+        <button className="btn btn-ghost btn-sm"
+          onClick={(e) => { e.stopPropagation(); onDelete(trip.id); }} aria-label="Delete trip">
+          🗑️
+        </button>
+      </div>
     </article>
   );
 }

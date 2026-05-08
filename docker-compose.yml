@@ -17,6 +17,7 @@ services:
     volumes:
       - ./server/src:/app/server/src
       - ./shared:/app/shared
+      - server-data:/app/server/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:9001/api/health').then(r=>{if(!r.ok)throw 1}).catch(()=>process.exit(1))"]
@@ -38,3 +39,6 @@ services:
       server:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  server-data:

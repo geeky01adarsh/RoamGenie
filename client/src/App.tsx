@@ -10,7 +10,8 @@ import CostEstimator from './components/CostEstimator';
 import ProfilePage from './components/ProfilePage';
 import { useTrip } from './hooks/useTrip';
 import { useAuth } from './hooks/useAuth';
-import { saveTrip } from './services/firebase';
+import { saveTrip as saveFirebaseTrip } from './services/firebase';
+import { saveServerTrip } from './services/api';
 import type { Activity, Trip } from '@shared/types/index';
 
 type AppView = 'planner' | 'profile';
@@ -26,17 +27,20 @@ export default function App() {
   const handleActivityClick = useCallback((_activity: Activity) => {}, []);
 
   const handleSaveTrip = useCallback(async () => {
-    if (!trip || !isAuthenticated) return;
+    if (!trip || !isAuthenticated || !user) return;
     setSaveStatus('saving');
     try {
-      await saveTrip(trip);
+      // Save to server (primary persistence)
+      await saveServerTrip(trip, user.uid);
+      // Also save to Firebase (bonus persistence)
+      try { await saveFirebaseTrip(trip); } catch { /* Firebase optional */ }
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch {
       setSaveStatus('error');
       setTimeout(() => setSaveStatus('idle'), 3000);
     }
-  }, [trip, isAuthenticated]);
+  }, [trip, isAuthenticated, user]);
 
   const handleLoadTrip = useCallback((loadedTrip: Trip) => {
     setTrip(loadedTrip);
